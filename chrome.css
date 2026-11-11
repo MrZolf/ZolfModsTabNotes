@@ -1,0 +1,312 @@
+/*
+ * Zolf Mods - Tab Notes
+ *
+ * Styles for the note indicator, the note window and the context menu icon.
+ * The elements themselves are created by tab-notes.uc.js.
+ *
+ * Dropdowns: the built-in first entry of a Zen/Sine dropdown is the DEFAULT choice
+ * (stored as "none" or not stored at all), so the "base" rules below are the
+ * defaults and the other choices only override them.
+ */
+
+
+/* ---- indicator color (yellow = default) ---- */
+:root {
+  --ztn-note-color: #f5c542;
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.color", "black")) {
+  :root { --ztn-note-color: #161616; }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.color", "blue")) {
+  :root { --ztn-note-color: #3f8cff; }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.color", "green")) {
+  :root { --ztn-note-color: #43a047; }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.color", "orange")) {
+  :root { --ztn-note-color: #ff9800; }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.color", "pink")) {
+  :root { --ztn-note-color: #f06292; }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.color", "purple")) {
+  :root { --ztn-note-color: #9c6ade; }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.color", "red")) {
+  :root { --ztn-note-color: #ef5350; }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.color", "white")) {
+  :root { --ztn-note-color: #f5f5f5; }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.color", "accent")) {
+  :root { --ztn-note-color: var(--zen-primary-color, #6c8cff); }
+}
+
+.ztn-note-indicator {
+  z-index: 10;
+  pointer-events: auto;
+  background: var(--ztn-note-color);
+}
+.ztn-note-indicator:hover {
+  filter: brightness(1.15);
+}
+
+/* ---- indicator: ribbon (default) - a small bookmark ribbon inside the top edge of the tab ---- */
+.ztn-note-ribbon {
+  position: absolute;
+  top: 0;
+  right: 30%;
+  width: 12px;
+  height: 16px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
+}
+#zen-essentials tab[zen-essential="true"] .ztn-note-ribbon {
+  right: 10px;
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.ribbon-corner", "left")) {
+  #zen-essentials tab[zen-essential="true"] .ztn-note-ribbon {
+    right: auto;
+    left: 10px;
+  }
+}
+
+/* ---- indicator: icon ---- */
+.ztn-note-icon {
+  width: 16px;
+  height: 16px;
+  mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20fill='black'%20d='M3%201.5h10A1.5%201.5%200%200%201%2014.5%203v5.5h-4a2%202%200%200%200-2%202v4H3A1.5%201.5%200%200%201%201.5%2013V3A1.5%201.5%200%200%201%203%201.5Z'/%3E%3Cpath%20fill='black'%20fill-opacity='0.55'%20d='M14.5%209.5%209.5%2014.5v-3a2%202%200%200%201%202-2Z'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+/* regular tabs: sits in the tab row, right after the mute button, same size as it,
+   with a bigger gap to the tab name */
+.ztn-note-icon.ztn-note-inline {
+  position: static;
+  flex: none;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  margin-inline-end: 8px;
+}
+/* essentials: placed exactly like the mute icon positions (default: top left) */
+#zen-essentials tab[zen-essential="true"] {
+  --ztn-note-top: 9px;
+  --ztn-note-right: auto;
+  --ztn-note-bottom: auto;
+  --ztn-note-left: 9px;
+  --ztn-note-translate: none;
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "top-right")) {
+  #zen-essentials tab[zen-essential="true"] {
+    --ztn-note-top: 9px;
+    --ztn-note-right: 9px;
+    --ztn-note-bottom: auto;
+    --ztn-note-left: auto;
+  }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "bottom-right")) {
+  #zen-essentials tab[zen-essential="true"] {
+    --ztn-note-top: auto;
+    --ztn-note-right: 9px;
+    --ztn-note-bottom: 9px;
+    --ztn-note-left: auto;
+  }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "bottom-left")) {
+  #zen-essentials tab[zen-essential="true"] {
+    --ztn-note-top: auto;
+    --ztn-note-right: auto;
+    --ztn-note-bottom: 9px;
+    --ztn-note-left: 9px;
+  }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "middle-high")) {
+  #zen-essentials tab[zen-essential="true"] {
+    --ztn-note-top: calc(50% - 18px);
+    --ztn-note-right: auto;
+    --ztn-note-bottom: auto;
+    --ztn-note-left: 50%;
+    --ztn-note-translate: -50% -50%;
+  }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "middle-low")) {
+  #zen-essentials tab[zen-essential="true"] {
+    --ztn-note-top: calc(50% - 9px);
+    --ztn-note-right: auto;
+    --ztn-note-bottom: auto;
+    --ztn-note-left: 50%;
+    --ztn-note-translate: -50% -50%;
+  }
+}
+#zen-essentials tab[zen-essential="true"] .ztn-note-icon {
+  position: absolute;
+  top: var(--ztn-note-top);
+  right: var(--ztn-note-right);
+  bottom: var(--ztn-note-bottom);
+  left: var(--ztn-note-left);
+  translate: var(--ztn-note-translate);
+}
+
+/* ---- context menu icon: the color is injected by the script as --ztn-menu-icon ---- */
+#context_ztn-add-note:not([ztn-iconic]) {
+  padding-inline-start: 32px;
+  background: var(--ztn-menu-icon) no-repeat 8px center / 16px 16px;
+}
+#context_ztn-add-note[ztn-iconic],
+#context_ztn-add-note[ztn-iconic] .menu-icon,
+#context_ztn-add-note[ztn-iconic] .menu-iconic-icon {
+  list-style-image: var(--ztn-menu-icon);
+}
+
+/* ---- transparent layer under the window while editing (swallows the closing click) ---- */
+.ztn-note-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482999;
+  display: none;
+}
+.ztn-note-scrim[active] {
+  display: block;
+}
+
+/* ---- the note window: uses the Zen colors of the current space ---- */
+.ztn-note-card {
+  --ztn-accent: var(--zen-primary-color, #6c8cff);
+  --ztn-card-w: 300px;
+  --ztn-card-min: 76px;
+  --ztn-card-max: 240px;
+
+  position: fixed;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  width: var(--ztn-card-w);
+  max-width: calc(100vw - 16px);
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+
+  color: var(--toolbar-color, #f0f0f4);
+  background: color-mix(in srgb, var(--ztn-accent) 16%, var(--zen-colors-secondary, var(--toolbar-bgcolor, #1c1b22)));
+  border: 1px solid var(--zen-colors-border, color-mix(in srgb, var(--ztn-accent) 30%, transparent));
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+  font: 13px/1.4 system-ui, sans-serif;
+
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(4px) scale(0.98);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 0s linear 120ms;
+}
+.ztn-note-card[open] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition-delay: 0s;
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.window-size", "small")) {
+  .ztn-note-card {
+    --ztn-card-w: 240px;
+    --ztn-card-min: 52px;
+    --ztn-card-max: 170px;
+  }
+}
+@media (-moz-pref("mod.zolfmods.tab-notes.window-size", "large")) {
+  .ztn-note-card {
+    --ztn-card-w: 400px;
+    --ztn-card-min: 120px;
+    --ztn-card-max: 360px;
+  }
+}
+
+.ztn-note-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 24px;
+  padding-inline: 2px;
+  font-size: 11px;
+}
+.ztn-note-label {
+  color: var(--toolbar-color, #f0f0f4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+.ztn-note-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.6;
+}
+
+/* formatting buttons, top right */
+.ztn-note-fmt {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+.ztn-note-fmt-btn {
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  opacity: 0.8;
+}
+.ztn-note-fmt-btn:hover {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.ztn-note-fmt-btn.active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--ztn-accent) 45%, transparent);
+}
+.ztn-fmt-bold { font-weight: 800; }
+.ztn-fmt-italic { font-style: italic; }
+.ztn-fmt-underline { text-decoration: underline; }
+.ztn-fmt-strikeThrough { text-decoration: line-through; }
+
+.ztn-note-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--ztn-card-min);
+  max-height: var(--ztn-card-max);
+  overflow-y: auto;
+  padding: 6px 8px;
+  color: inherit;
+  caret-color: var(--toolbar-color, #f0f0f4);
+  font: inherit;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+  -moz-user-select: text;
+  user-select: text;
+  background: color-mix(in srgb, var(--ztn-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ztn-accent) 28%, transparent);
+  border-radius: 9px;
+  outline: none;
+}
+.ztn-note-text:focus {
+  border-color: var(--ztn-accent);
+}
+.ztn-note-text:empty::before {
+  content: attr(data-placeholder);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.ztn-note-text::selection {
+  color: inherit;
+  background: color-mix(in srgb, var(--toolbar-color, #f0f0f4) 38%, transparent);
+}

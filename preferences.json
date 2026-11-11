@@ -1,0 +1,130 @@
+[
+  {
+    "property": "mod.zolfmods.tab-notes.indicator",
+    "label": "Note indicator",
+    "type": "dropdown",
+    "placeholder": "Ribbon",
+    "options": [
+      {
+        "label": "Icon",
+        "value": "icon"
+      }
+    ]
+  },
+  {
+    "property": "mod.zolfmods.tab-notes.ribbon-corner",
+    "label": "Ribbon corner on essentials",
+    "type": "dropdown",
+    "placeholder": "Right",
+    "options": [
+      {
+        "label": "Left",
+        "value": "left"
+      }
+    ],
+    "conditions": [
+      {
+        "not": {
+          "property": "mod.zolfmods.tab-notes.indicator",
+          "value": "icon"
+        }
+      }
+    ]
+  },
+  {
+    "property": "mod.zolfmods.tab-notes.icon-position",
+    "label": "Icon position on essentials",
+    "type": "dropdown",
+    "placeholder": "Top left",
+    "options": [
+      {
+        "label": "Top right",
+        "value": "top-right"
+      },
+      {
+        "label": "Bottom right",
+        "value": "bottom-right"
+      },
+      {
+        "label": "Bottom left",
+        "value": "bottom-left"
+      },
+      {
+        "label": "Middle high",
+        "value": "middle-high"
+      },
+      {
+        "label": "Middle low",
+        "value": "middle-low"
+      }
+    ],
+    "conditions": [
+      {
+        "if": {
+          "property": "mod.zolfmods.tab-notes.indicator",
+          "value": "icon"
+        }
+      }
+    ]
+  },
+  {
+    "property": "mod.zolfmods.tab-notes.color",
+    "label": "Indicator color",
+    "type": "dropdown",
+    "placeholder": "Yellow",
+    "options": [
+      {
+        "label": "Black",
+        "value": "black"
+      },
+      {
+        "label": "Blue",
+        "value": "blue"
+      },
+      {
+        "label": "Green",
+        "value": "green"
+      },
+      {
+        "label": "Orange",
+        "value": "orange"
+      },
+      {
+        "label": "Pink",
+        "value": "pink"
+      },
+      {
+        "label": "Purple",
+        "value": "purple"
+      },
+      {
+        "label": "Red",
+        "value": "red"
+      },
+      {
+        "label": "White",
+        "value": "white"
+      },
+      {
+        "label": "Zen accent color",
+        "value": "accent"
+      }
+    ]
+  },
+  {
+    "property": "mod.zolfmods.tab-notes.window-size",
+    "label": "Note window size",
+    "type": "dropdown",
+    "placeholder": "Medium",
+    "options": [
+      {
+        "label": "Small",
+        "value": "small"
+      },
+      {
+        "label": "Large",
+        "value": "large"
+      }
+    ]
+  }
+]
