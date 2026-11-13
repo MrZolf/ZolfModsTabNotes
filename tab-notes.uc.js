@@ -59,6 +59,8 @@
     let overIndicator = false;
     let lastPointerTarget = null;
     let sidebarHeld = false;
+    let weSetHover = false; // we added zen-has-hover ourselves and must take it back
+    let lastPeekHover = 0; // last time the pointer was on a peeking note or its indicator
     const menuItems = {};
 
     let store = {}; // key -> { t: stored value, u: updated }
@@ -224,6 +226,46 @@
     const indicatorMode = () =>
       Services.prefs.getStringPref(PREF_INDICATOR, "") === "icon" ? "icon" : "ribbon";
 
+    // Zen draws the folder icon on its own (it takes no room in the row) and keeps the folder name
+    // clear of it with a left margin / padding on the name. A note icon put in front of the name
+    // would therefore land ON the folder icon. So that "room" is moved in front of the note icon:
+    // [folder icon][note icon][name].
+    function placeBeforeFolderLabel(ind, label) {
+      const startX = label.getBoundingClientRect().left;
+      const cs = getComputedStyle(label);
+      const lead = (parseFloat(cs.marginInlineStart) || 0) + (parseFloat(cs.paddingInlineStart) || 0);
+
+      label.before(ind);
+      ind._ztnLabel = label;
+
+      if (lead > 0) {
+        ind.style.marginInlineStart = lead + "px";
+        label.style.setProperty("margin-inline-start", "0", "important");
+        label.style.setProperty("padding-inline-start", "0", "important");
+      }
+
+      // measure: the note icon must start exactly where the name used to start
+      if (startX > 0) {
+        const delta = startX - ind.getBoundingClientRect().left;
+        if (Math.abs(delta) > 1) {
+          ind.style.marginInlineStart = (parseFloat(ind.style.marginInlineStart) || 0) + delta + "px";
+        }
+      }
+    }
+
+    function dropIndicator(s) {
+      const ind = s._ztnIndicator;
+      if (ind) {
+        const label = ind._ztnLabel;
+        if (label) {
+          label.style.removeProperty("margin-inline-start");
+          label.style.removeProperty("padding-inline-start");
+        }
+        ind.remove();
+      }
+      s._ztnIndicator = null;
+    }
+
     function createIndicator(s, mode, essential) {
       const folder = isFolder(s);
       const container = folder
@@ -238,6 +280,7 @@
       ind.addEventListener("mouseenter", () => {
         overIndicator = true; // keeps tooltips, previews and the folder search popup from showing
         hideHoverPopups();
+        lastPeekHover = Date.now();
         scheduleShow(s);
       });
       ind.addEventListener("mouseleave", () => {
@@ -256,7 +299,7 @@
         if (folder) {
           // left side, directly before the folder name - like next to the mute button on tabs
           const label = container.querySelector(".tab-group-label");
-          if (label) label.before(ind);
+          if (label) placeBeforeFolderLabel(ind, label);
           else container.prepend(ind);
         } else {
           const ref = container.querySelector(".tab-audio-button") || container.querySelector(".tab-icon-stack");
@@ -276,8 +319,7 @@
 
       if (!raw || !hasText(rawToHtml(raw))) {
         s.removeAttribute("ztn-note");
-        if (ind) ind.remove();
-        s._ztnIndicator = null;
+        dropIndicator(s);
         return;
       }
 
@@ -295,7 +337,7 @@
       const kind = mode + (essential ? "-essential" : isFolder(s) ? "-folder" : "-regular");
       if (ind && ind.isConnected && ind.dataset.ztnKind === kind) return;
 
-      if (ind) ind.remove();
+      dropIndicator(s);
       ind = createIndicator(s, mode, essential);
       if (!ind) return;
       ind.dataset.ztnKind = kind;
@@ -324,15 +366,29 @@
       tb.setAttribute("has-popup-menu", "true");
     }
 
+    // Gives the sidebar back to Zen. Nothing of ours may stay on the toolbox afterwards: a leftover
+    // attribute (that Zen's own pointer logic does not know about) keeps the sidebar open for good.
     function releaseSidebar() {
       sidebarHeld = false;
       const tb = toolbox();
       if (!tb) return;
       try {
         if (tb.matches(":hover")) {
-          // the pointer is on the sidebar: hand the "open" state back to it before dropping ours
-          tb.setAttribute("zen-has-hover", "true");
-          tb.setAttribute("zen-has-implicit-hover", "true");
+          // the pointer is on the sidebar: make sure it stays open, and take our flag back when it leaves
+          if (!tb.hasAttribute("zen-has-hover")) {
+            tb.setAttribute("zen-has-hover", "true");
+            weSetHover = true;
+            tb.addEventListener(
+              "mouseleave",
+              () => {
+                setTimeout(() => {
+                  if (weSetHover && !tb.matches(":hover")) tb.removeAttribute("zen-has-hover");
+                  weSetHover = false;
+                }, 300);
+              },
+              { once: true }
+            );
+          }
         } else {
           const keep = Services.prefs.getIntPref("zen.view.compact.sidebar-keep-hover.duration", 150);
           window.gZenCompactModeManager?.flashElement?.(tb, keep, "has-hover" + tb.id, "zen-has-hover");
@@ -553,6 +609,7 @@
       w.el.append(head, w.text);
 
       w.el.addEventListener("mouseenter", () => {
+        lastPeekHover = Date.now();
         if (transient === w) clearTimeout(hideTimer);
       });
       w.el.addEventListener("mouseleave", () => {
@@ -661,7 +718,13 @@
     function closeWindow(w, save) {
       if (!windows.has(w)) return;
       clearTimeout(w.saveTimer);
-      if (save) commit(w);
+      if (save) {
+        try {
+          commit(w);
+        } catch (e) {
+          console.error(LOG, "could not save the note", e);
+        }
+      }
       windows.delete(w);
 
       const wasEditing = w.mode === "edit";
@@ -787,6 +850,26 @@
       if (ALLOWED_POPUPS.has(popup.id)) bindMenu(popup);
     }
 
+    // Safety net. Whatever happens (a missed mouseleave, a removed indicator, a lost focus, an
+    // exception somewhere) a note window that is only being peeked at must close once the pointer
+    // is gone, and the sidebar must never stay held without a window.
+    function reconcile() {
+      if (!transient && !sidebarHeld) return;
+      try {
+        if (transient && !transient.el.isConnected) closeWindow(transient, false);
+        const t = transient;
+        if (t && t.mode === "peek") {
+          const ind = t.subject._ztnIndicator;
+          const over = t.el.matches(":hover") || (!!ind && ind.isConnected && ind.matches(":hover"));
+          if (over) lastPeekHover = Date.now();
+          else if (Date.now() - lastPeekHover > 600) closeWindow(t, true);
+        }
+        updateHold();
+      } catch (e) {
+        console.error(LOG, "watchdog", e);
+      }
+    }
+
     // ---- start-up ----
     function onResize() {
       if (transient) placeNear(transient, transient.subject._ztnIndicator || transient.subject);
@@ -827,7 +910,7 @@
       const tb = toolbox();
       if (tb) {
         new MutationObserver(() => {
-          if (sidebarHeld && !tb.hasAttribute("has-popup-menu")) tb.setAttribute("has-popup-menu", "true");
+          if (sidebarHeld && transient && !tb.hasAttribute("has-popup-menu")) tb.setAttribute("has-popup-menu", "true");
         }).observe(tb, { attributes: true, attributeFilter: ["has-popup-menu"] });
       }
 
@@ -836,6 +919,7 @@
       setTimeout(refreshAll, 2000);
       setTimeout(refreshAll, 6000);
       setTimeout(pruneStore, 15000);
+      setInterval(reconcile, 500);
     }
 
     return { init, refreshAll };
