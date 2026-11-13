@@ -260,9 +260,9 @@ zen-folder[ztn-note] .tab-group-label-container {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 24px;
+  min-height: 29px;
   padding-inline: 2px;
-  font-size: 11px;
+  font-size: 12px;
   cursor: grab; /* the title bar is the drag handle */
   -moz-user-select: none;
   user-select: none;
@@ -290,12 +290,12 @@ zen-folder[ztn-note] .tab-group-label-container {
 }
 .ztn-note-fmt-btn {
   box-sizing: border-box;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   color: inherit;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
   background: transparent;
@@ -357,25 +357,24 @@ zen-folder[ztn-note] .tab-group-label-container {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  color: inherit;
+  width: 26px;
+  height: 26px;
+  padding: 0 0 2px;
+  color: #fff;
   font: inherit;
-  font-size: 16px;
+  font-size: 21px;
+  font-weight: 600;
   line-height: 1;
   cursor: pointer;
-  background: transparent;
+  background: #d93f45;
   border: none;
-  border-radius: 6px;
-  opacity: 0.8;
+  border-radius: 7px;
 }
 .ztn-note-card[data-mode="float"] .ztn-note-close {
   display: flex;
 }
 .ztn-note-close:hover {
-  opacity: 1;
-  background: color-mix(in srgb, #ff6b6b 35%, transparent);
+  background: #ef5258;
 }
 .ztn-note-card[data-mode="float"] {
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);

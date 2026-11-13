@@ -236,10 +236,8 @@
         "ztn-note-indicator " + (mode === "icon" ? "ztn-note-icon" : "ztn-note-ribbon") + (folder ? " ztn-note-folder" : "")
       );
       ind.addEventListener("mouseenter", () => {
-        overIndicator = true; // keeps the tab tooltip / preview from showing over it
-        try {
-          document.getElementById("tab-preview-panel")?.hidePopup();
-        } catch (e) {}
+        overIndicator = true; // keeps tooltips, previews and the folder search popup from showing
+        hideHoverPopups();
         scheduleShow(s);
       });
       ind.addEventListener("mouseleave", () => {
@@ -255,11 +253,16 @@
       if (mode === "icon" && !essential) {
         // regular tabs: right next to the mute button; folders: right after the folder name
         ind.classList.add("ztn-note-inline");
-        const ref = folder
-          ? container.querySelector(".tab-group-label")
-          : container.querySelector(".tab-audio-button") || container.querySelector(".tab-icon-stack");
-        if (ref) ref.after(ind);
-        else container.appendChild(ind);
+        if (folder) {
+          // left side, directly before the folder name - like next to the mute button on tabs
+          const label = container.querySelector(".tab-group-label");
+          if (label) label.before(ind);
+          else container.prepend(ind);
+        } else {
+          const ref = container.querySelector(".tab-audio-button") || container.querySelector(".tab-icon-stack");
+          if (ref) ref.after(ind);
+          else container.appendChild(ind);
+        }
       } else {
         container.appendChild(ind);
       }
@@ -699,6 +702,21 @@
       saveNote(subject, "");
     }
 
+    // ---- hover popups (tab tooltip / preview, Zen's folder search) ----
+    // only the two context menus below may open while the pointer is on an indicator
+    const ALLOWED_POPUPS = new Set(["tabContextMenu", "zenFolderActions"]);
+
+    function hideHoverPopups() {
+      try {
+        document.getElementById("tab-preview-panel")?.hidePopup();
+        for (const p of document.querySelectorAll("panel, menupopup")) {
+          if (p.state === "open" && !ALLOWED_POPUPS.has(p.id) && p.id !== "tab-preview-panel") {
+            if (p.closest?.("zen-folder") || /folder|search|preview/i.test(p.id || "")) p.hidePopup();
+          }
+        }
+      } catch (e) {}
+    }
+
     // ---- context menus: "Add Note..." / "Delete Note..." for tabs and folders ----
     function ensureMenuItem(kind, popup, anchorSelector) {
       let mi = menuItems[kind];
@@ -722,16 +740,9 @@
       return mi;
     }
 
-    function onPopupShowing(e) {
-      const popup = e.target;
-
-      // the tab tooltip / hover preview must not show while the pointer is on an indicator
-      if (overIndicator && (popup.localName === "tooltip" || /tooltip|preview/i.test(popup.id || ""))) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-
+    // Runs ON the popup (target phase), i.e. after the browser's own onpopupshowing handler has
+    // filled in TabContextMenu.contextTab - a document-level capture listener would see it too early.
+    function updateMenu(popup) {
       let subject = null;
       let mi = null;
       if (popup.id === "tabContextMenu") {
@@ -740,18 +751,40 @@
           popup,
           '#context_zen-edit-tab-title, [data-l10n-id="tab-context-zen-edit-title"]'
         );
-        subject = window.TabContextMenu?.contextTab || null;
+        subject =
+          window.TabContextMenu?.contextTab ||
+          (popup.triggerNode && popup.triggerNode.closest ? popup.triggerNode.closest("tab") : null);
       } else if (popup.id === "zenFolderActions") {
         mi = ensureMenuItem("folder", popup, '[data-l10n-id*="rename" i], [id*="rename" i]');
         subject =
           folderFrom(popup.triggerNode) || folderFrom(popup.anchorNode) || folderFrom(lastPointerTarget);
-      } else {
-        return;
       }
+      if (!mi) return;
 
       mi._ztnSubject = subject;
       mi.hidden = !subject;
       mi.setAttribute("label", subject && hasNote(subject) ? "Delete Note..." : "Add Note...");
+    }
+
+    function bindMenu(popup) {
+      if (!popup || popup._ztnBound) return;
+      popup._ztnBound = true;
+      popup.addEventListener("popupshowing", (e) => {
+        if (e.target === popup) updateMenu(popup);
+      });
+    }
+
+    function onPopupShowing(e) {
+      const popup = e.target;
+
+      if (overIndicator && !ALLOWED_POPUPS.has(popup.id)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      // popups that did not exist at start-up are bound the first time they show
+      if (ALLOWED_POPUPS.has(popup.id)) bindMenu(popup);
     }
 
     // ---- start-up ----
@@ -762,6 +795,7 @@
 
     function init() {
       document.addEventListener("popupshowing", onPopupShowing, true);
+      for (const id of ALLOWED_POPUPS) bindMenu(document.getElementById(id));
       for (const type of ["mousedown", "contextmenu"]) {
         document.addEventListener(type, (e) => (lastPointerTarget = e.target), true);
       }
