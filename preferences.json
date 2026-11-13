@@ -12,34 +12,14 @@
     ]
   },
   {
-    "property": "mod.zolfmods.tab-notes.ribbon-corner",
-    "label": "Ribbon corner on essentials",
+    "property": "mod.zolfmods.tab-notes.essentials-position",
+    "label": "Indicator position on essentials",
     "type": "dropdown",
-    "placeholder": "Right",
+    "placeholder": "Top right",
     "options": [
       {
-        "label": "Left",
-        "value": "left"
-      }
-    ],
-    "conditions": [
-      {
-        "not": {
-          "property": "mod.zolfmods.tab-notes.indicator",
-          "value": "icon"
-        }
-      }
-    ]
-  },
-  {
-    "property": "mod.zolfmods.tab-notes.icon-position",
-    "label": "Icon position on essentials",
-    "type": "dropdown",
-    "placeholder": "Top left",
-    "options": [
-      {
-        "label": "Top right",
-        "value": "top-right"
+        "label": "Top left",
+        "value": "top-left"
       },
       {
         "label": "Bottom right",
@@ -56,14 +36,6 @@
       {
         "label": "Middle low",
         "value": "middle-low"
-      }
-    ],
-    "conditions": [
-      {
-        "if": {
-          "property": "mod.zolfmods.tab-notes.indicator",
-          "value": "icon"
-        }
       }
     ]
   },

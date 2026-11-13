@@ -1,7 +1,7 @@
 /*
  * Zolf Mods - Tab Notes
  *
- * Styles for the note indicator, the note window and the context menu icon.
+ * Styles for the note indicator (tabs and folders) and the note windows.
  * The elements themselves are created by tab-notes.uc.js.
  *
  * Dropdowns: the built-in first entry of a Zen/Sine dropdown is the DEFAULT choice
@@ -51,7 +51,7 @@
   filter: brightness(1.15);
 }
 
-/* ---- indicator: ribbon (default) - a small bookmark ribbon inside the top edge of the tab ---- */
+/* ---- indicator: ribbon (default) - a small bookmark ribbon inside the top edge of a tab / folder ---- */
 .ztn-note-ribbon {
   position: absolute;
   top: 0;
@@ -60,14 +60,14 @@
   height: 16px;
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
 }
+/* essentials: the ribbon hangs from the top (or bottom) edge, at the chosen position */
 #zen-essentials tab[zen-essential="true"] .ztn-note-ribbon {
-  right: 10px;
-}
-@media (-moz-pref("mod.zolfmods.tab-notes.ribbon-corner", "left")) {
-  #zen-essentials tab[zen-essential="true"] .ztn-note-ribbon {
-    right: auto;
-    left: 10px;
-  }
+  top: var(--ztn-r-top);
+  right: var(--ztn-r-right);
+  bottom: var(--ztn-r-bottom);
+  left: var(--ztn-r-left);
+  translate: var(--ztn-r-translate);
+  clip-path: var(--ztn-r-clip);
 }
 
 /* ---- indicator: icon ---- */
@@ -86,54 +86,96 @@
   height: 24px;
   margin-inline-end: 8px;
 }
-/* essentials: placed exactly like the mute icon positions (default: top left) */
+/* essentials: ONE position setting for both styles (default: top right).
+   Icon: exactly the mute icon positions. Ribbon: hangs from the top edge (bottom edge for
+   the bottom positions); both "middle" positions put it in the centre of the top edge. */
 #zen-essentials tab[zen-essential="true"] {
   --ztn-note-top: 9px;
-  --ztn-note-right: auto;
+  --ztn-note-right: 9px;
   --ztn-note-bottom: auto;
-  --ztn-note-left: 9px;
+  --ztn-note-left: auto;
   --ztn-note-translate: none;
+
+  --ztn-r-top: 0;
+  --ztn-r-right: 10px;
+  --ztn-r-bottom: auto;
+  --ztn-r-left: auto;
+  --ztn-r-translate: none;
+  --ztn-r-clip: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
 }
-@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "top-right")) {
+@media (-moz-pref("mod.zolfmods.tab-notes.essentials-position", "top-left")) {
   #zen-essentials tab[zen-essential="true"] {
     --ztn-note-top: 9px;
-    --ztn-note-right: 9px;
+    --ztn-note-right: auto;
     --ztn-note-bottom: auto;
-    --ztn-note-left: auto;
+    --ztn-note-left: 9px;
+    --ztn-note-translate: none;
+    --ztn-r-top: 0;
+    --ztn-r-right: auto;
+    --ztn-r-bottom: auto;
+    --ztn-r-left: 10px;
+    --ztn-r-translate: none;
+    --ztn-r-clip: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
   }
 }
-@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "bottom-right")) {
+@media (-moz-pref("mod.zolfmods.tab-notes.essentials-position", "bottom-right")) {
   #zen-essentials tab[zen-essential="true"] {
     --ztn-note-top: auto;
     --ztn-note-right: 9px;
     --ztn-note-bottom: 9px;
     --ztn-note-left: auto;
+    --ztn-note-translate: none;
+    --ztn-r-top: auto;
+    --ztn-r-right: 10px;
+    --ztn-r-bottom: 0;
+    --ztn-r-left: auto;
+    --ztn-r-translate: none;
+    --ztn-r-clip: polygon(0 100%, 100% 100%, 100% 0, 50% 28%, 0 0);
   }
 }
-@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "bottom-left")) {
+@media (-moz-pref("mod.zolfmods.tab-notes.essentials-position", "bottom-left")) {
   #zen-essentials tab[zen-essential="true"] {
     --ztn-note-top: auto;
     --ztn-note-right: auto;
     --ztn-note-bottom: 9px;
     --ztn-note-left: 9px;
+    --ztn-note-translate: none;
+    --ztn-r-top: auto;
+    --ztn-r-right: auto;
+    --ztn-r-bottom: 0;
+    --ztn-r-left: 10px;
+    --ztn-r-translate: none;
+    --ztn-r-clip: polygon(0 100%, 100% 100%, 100% 0, 50% 28%, 0 0);
   }
 }
-@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "middle-high")) {
+@media (-moz-pref("mod.zolfmods.tab-notes.essentials-position", "middle-high")) {
   #zen-essentials tab[zen-essential="true"] {
     --ztn-note-top: calc(50% - 18px);
     --ztn-note-right: auto;
     --ztn-note-bottom: auto;
     --ztn-note-left: 50%;
     --ztn-note-translate: -50% -50%;
+    --ztn-r-top: 0;
+    --ztn-r-right: auto;
+    --ztn-r-bottom: auto;
+    --ztn-r-left: 50%;
+    --ztn-r-translate: -50% 0;
+    --ztn-r-clip: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
   }
 }
-@media (-moz-pref("mod.zolfmods.tab-notes.icon-position", "middle-low")) {
+@media (-moz-pref("mod.zolfmods.tab-notes.essentials-position", "middle-low")) {
   #zen-essentials tab[zen-essential="true"] {
     --ztn-note-top: calc(50% - 9px);
     --ztn-note-right: auto;
     --ztn-note-bottom: auto;
     --ztn-note-left: 50%;
     --ztn-note-translate: -50% -50%;
+    --ztn-r-top: 0;
+    --ztn-r-right: auto;
+    --ztn-r-bottom: auto;
+    --ztn-r-left: 50%;
+    --ztn-r-translate: -50% 0;
+    --ztn-r-clip: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
   }
 }
 #zen-essentials tab[zen-essential="true"] .ztn-note-icon {
@@ -145,15 +187,9 @@
   translate: var(--ztn-note-translate);
 }
 
-/* ---- context menu icon: the color is injected by the script as --ztn-menu-icon ---- */
-#context_ztn-add-note:not([ztn-iconic]) {
-  padding-inline-start: 32px;
-  background: var(--ztn-menu-icon) no-repeat 8px center / 16px 16px;
-}
-#context_ztn-add-note[ztn-iconic],
-#context_ztn-add-note[ztn-iconic] .menu-icon,
-#context_ztn-add-note[ztn-iconic] .menu-iconic-icon {
-  list-style-image: var(--ztn-menu-icon);
+/* ---- folders: the ribbon / icon live in the folder title row ---- */
+zen-folder[ztn-note] .tab-group-label-container {
+  position: relative;
 }
 
 /* ---- transparent layer under the window while editing (swallows the closing click) ---- */
@@ -227,6 +263,9 @@
   min-height: 24px;
   padding-inline: 2px;
   font-size: 11px;
+  cursor: grab; /* the title bar is the drag handle */
+  -moz-user-select: none;
+  user-select: none;
 }
 .ztn-note-label {
   color: var(--toolbar-color, #f0f0f4);
@@ -309,4 +348,47 @@
 .ztn-note-text::selection {
   color: inherit;
   background: color-mix(in srgb, var(--toolbar-color, #f0f0f4) 38%, transparent);
+}
+
+/* close button: only shown once the window has been detached by dragging it */
+.ztn-note-close {
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  opacity: 0.8;
+}
+.ztn-note-card[data-mode="float"] .ztn-note-close {
+  display: flex;
+}
+.ztn-note-close:hover {
+  opacity: 1;
+  background: color-mix(in srgb, #ff6b6b 35%, transparent);
+}
+.ztn-note-card[data-mode="float"] {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+/* transparent layer while dragging: keeps the mouse events coming over the page */
+.ztn-note-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482999;
+  display: none;
+  cursor: grabbing;
+}
+.ztn-note-shield[active] {
+  display: block;
 }

@@ -1,18 +1,18 @@
 {
   "id": "zolfmods-tab-notes",
   "name": "Zolf Mods Tab Notes",
-  "description": "Notes for tabs: context menu entry, tab indicator and a rich-text note window.",
+  "description": "Notes for tabs and folders: context menu entry, indicator and a rich-text note window.",
   "homepage": "https://github.com/MrZolf/ZolfModsTabNotes",
   "readme": "README.md",
   "author": "MrZolf",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "style": {
     "chrome": "chrome.css"
   },
   "scripts": {
     "tab-notes.uc.js": {
       "name": "Tab Notes",
-      "description": "Adds the Add Note menu entry, the indicator and the note window.",
+      "description": "Adds the Add Note menu entries, the indicators and the note windows.",
       "include": [
         "chrome://browser/content/browser.xhtml"
       ]
@@ -20,6 +20,7 @@
   },
   "tags": [
     "tabs",
+    "folders",
     "notes",
     "essentials"
   ],
