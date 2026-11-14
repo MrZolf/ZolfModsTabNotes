@@ -227,38 +227,28 @@
     const indicatorMode = () =>
       Services.prefs.getStringPref(PREF_INDICATOR, "") === "icon" ? "icon" : "ribbon";
 
-    // Zen draws the folder icon on its own (it takes no room in the row) and keeps the folder name
-    // clear of it with an offset on the name. A note icon put in front of the name therefore sits at
-    // the start of the row, ON the folder icon, while the name is already where it should be.
-    // So the icon is only moved visually (translate) to the spot right in front of the name:
-    // [folder icon][note icon][name]. Nothing of Zen's is modified, and the offset is measured again
-    // all the time (the row changes with hover, collapse, renames...), so it cannot go stale.
+    // Folder rows. Zen draws the folder icon on its own (an absolutely positioned
+    // .tab-group-folder-icon) and keeps the name clear of it with `padding: 0 0 0 32px !important`
+    // on the label. The note icon is therefore ALSO absolutely positioned - right behind the folder
+    // icon - and the label gets 32px more padding (see chrome.css) to make room for it:
+    // [folder icon][note icon][name]. Only the folder icon's position is measured, and it is
+    // measured again all the time, so a changed row (hover, collapse, rename...) cannot go stale.
     function alignFolderIndicator(ind) {
-      const folder = ind.closest("zen-folder");
-      const label = folder && folder.querySelector(".tab-group-label");
-      if (!label) return;
-      if (ind.nextElementSibling !== label) label.before(ind); // Zen re-created the name
-      ind._ztnLabel = label;
-
-      ind.style.translate = "";
-      const l = label.getBoundingClientRect();
-      const r = ind.getBoundingClientRect();
-      if (!l.width || !r.width) return; // not laid out (hidden sidebar / other space)
-      const marginEnd = parseFloat(getComputedStyle(ind).marginInlineEnd) || 0;
-      const gap = Math.round(l.left - (r.right + marginEnd));
-      if (Math.abs(gap) > 1) ind.style.translate = gap + "px 0";
+      const container = ind.parentElement;
+      const icon = container && container.querySelector(".tab-group-folder-icon");
+      if (!icon) return;
+      const c = container.getBoundingClientRect();
+      const i = icon.getBoundingClientRect();
+      if (!c.width || !i.width) return; // not laid out (hidden sidebar / other space)
+      const left = Math.round(i.right - c.left + 6) + "px";
+      if (ind.style.left !== left) ind.style.left = left;
     }
 
     function alignAllFolderIndicators() {
       for (const f of document.querySelectorAll("zen-folder[ztn-note]")) {
         const ind = f._ztnIndicator;
-        if (ind && ind.isConnected && ind.classList.contains("ztn-note-inline")) alignFolderIndicator(ind);
+        if (ind && ind.isConnected && ind.classList.contains("ztn-note-folder-icon")) alignFolderIndicator(ind);
       }
-    }
-
-    function placeBeforeFolderLabel(ind, label) {
-      label.before(ind);
-      alignFolderIndicator(ind);
     }
 
     function dropIndicator(s) {
@@ -293,21 +283,16 @@
         openWindow(s, "edit", ind);
       });
 
-      if (mode === "icon" && !essential) {
-        // regular tabs: right next to the mute button; folders: right after the folder name
+      if (mode === "icon" && !essential && !folder) {
+        // regular tabs: right next to the mute button
         ind.classList.add("ztn-note-inline");
-        if (folder) {
-          // left side, directly before the folder name - like next to the mute button on tabs
-          const label = container.querySelector(".tab-group-label");
-          if (label) placeBeforeFolderLabel(ind, label);
-          else container.prepend(ind);
-        } else {
-          const ref = container.querySelector(".tab-audio-button") || container.querySelector(".tab-icon-stack");
-          if (ref) ref.after(ind);
-          else container.appendChild(ind);
-        }
+        const ref = container.querySelector(".tab-audio-button") || container.querySelector(".tab-icon-stack");
+        if (ref) ref.after(ind);
+        else container.appendChild(ind);
       } else {
+        if (folder && mode === "icon") ind.classList.add("ztn-note-folder-icon");
         container.appendChild(ind);
+        if (folder && mode === "icon") alignFolderIndicator(ind);
       }
       return ind;
     }
@@ -319,6 +304,7 @@
 
       if (!raw || !hasText(rawToHtml(raw))) {
         s.removeAttribute("ztn-note");
+        s.removeAttribute("ztn-note-icon");
         dropIndicator(s);
         return;
       }
@@ -333,6 +319,7 @@
       }
 
       const mode = indicatorMode();
+      if (isFolder(s)) s.toggleAttribute("ztn-note-icon", mode === "icon");
       const essential = !isFolder(s) && s.hasAttribute("zen-essential");
       const kind = mode + (essential ? "-essential" : isFolder(s) ? "-folder" : "-regular");
       if (ind && ind.isConnected && ind.dataset.ztnKind === kind) return;
@@ -466,6 +453,10 @@
       const active = document.activeElement;
       for (const w of windows) {
         const focused = !!active && w.text.contains(active);
+        if (focused) {
+          const sel = window.getSelection();
+          if (sel.rangeCount && w.text.contains(sel.anchorNode)) w.lastRange = sel.getRangeAt(0).cloneRange();
+        }
         for (const [cmd] of FORMAT_BUTTONS) {
           let on = false;
           if (focused) {
@@ -532,6 +523,19 @@
       const r = w.el.getBoundingClientRect();
       const vh = window.innerHeight;
       if (r.bottom > vh - 8) w.el.style.top = Math.max(8, vh - 8 - r.height) + "px";
+    }
+
+    // put the focus back where the user was typing (end of the note when there is no better idea)
+    function restoreCaret(w) {
+      const r = w.lastRange;
+      if (r && r.startContainer.isConnected && w.text.contains(r.startContainer)) {
+        w.text.focus();
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } else {
+        focusEnd(w);
+      }
     }
 
     function focusEnd(w) {
@@ -653,18 +657,34 @@
           document.execCommand("styleWithCSS", false, false);
         } catch (e) {}
         if (w.mode === "peek") setMode(w, "edit");
+        // a click that lands before the first character (or the browser's own default) starts at the
+        // top: editing should start at the END of the note
+        setTimeout(() => {
+          const sel = window.getSelection();
+          if (!sel.rangeCount || !sel.isCollapsed || !w.text.contains(sel.anchorNode)) return;
+          const before = document.createRange();
+          before.selectNodeContents(w.text);
+          before.setEnd(sel.anchorNode, sel.anchorOffset);
+          if (before.toString().length === 0 && w.text.textContent.length > 0) focusEnd(w);
+        }, 0);
       });
       w.text.addEventListener("blur", (e) => {
-        if (w.mode !== "edit") return; // detached windows stay open
+        if (w.mode !== "edit" || !w.el.hasAttribute("open")) return; // detached windows stay open
         if (e.relatedTarget && w.el.contains(e.relatedTarget)) return;
-        if (Date.now() - w.openedAt < 500) {
-          // the context menu was still closing and stole the focus back
-          setTimeout(() => w.text.focus(), 0);
+        if (Date.now() - w.openedAt < 500 || Date.now() - (w.lastKeyAt || 0) < 300) {
+          // the context menu was still closing, or a cursor key made something else grab the focus:
+          // take it back, with the caret where it was
+          setTimeout(() => restoreCaret(w), 0);
           return;
         }
+        console.debug(LOG, "note window closed because it lost the focus", {
+          to: e.relatedTarget,
+          active: document.activeElement,
+        });
         closeWindow(w, true);
       });
       w.text.addEventListener("keydown", (e) => {
+        w.lastKeyAt = Date.now();
         e.stopPropagation();
         if (e.key === "Escape") {
           e.preventDefault();
@@ -704,13 +724,13 @@
       const floating = findFloating(subject);
       if (floating) {
         bringToFront(floating);
-        if (mode === "edit") floating.text.focus();
+        if (mode === "edit") restoreCaret(floating);
         return;
       }
       if (transient && transient.subject === subject) {
         if (mode === "edit" && transient.mode !== "edit") {
           setMode(transient, "edit");
-          transient.text.focus();
+          focusEnd(transient);
         }
         return;
       }
@@ -897,6 +917,140 @@
       }
     }
 
+    // ---- backup: export / import of all notes ----
+    let toastTimer = 0;
+    function toast(message) {
+      let t = document.getElementById("ztn-note-toast");
+      if (!t) {
+        t = h("div", "ztn-note-toast");
+        t.id = "ztn-note-toast";
+        document.documentElement.appendChild(t);
+      }
+      t.textContent = message;
+      t.setAttribute("show", "");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.removeAttribute("show"), 3500);
+    }
+
+    async function pickFile(save) {
+      const fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+      fp.init(window.browsingContext, save ? "Export tab notes" : "Import tab notes", save ? fp.modeSave : fp.modeOpen);
+      fp.appendFilter("Tab notes (*.json)", "*.json");
+      fp.appendFilters(fp.filterAll);
+      if (save) {
+        fp.defaultString = "zolfmods-tab-notes-" + new Date().toISOString().slice(0, 10) + ".json";
+        fp.defaultExtension = "json";
+      }
+      const result = await new Promise((resolve) => fp.open(resolve));
+      return result === fp.returnOK || result === fp.returnReplace ? fp.file.path : null;
+    }
+
+    async function exportNotes() {
+      // make sure the file knows every note that currently lives in a tab's session data
+      for (const tab of gBrowser.tabs) {
+        const k = keyOf(tab);
+        const raw = getRaw(tab);
+        if (k && raw && hasText(rawToHtml(raw)) && !store[k]) store[k] = { t: raw, u: Date.now() };
+      }
+
+      const notes = {};
+      for (const [k, v] of Object.entries(store)) notes[k] = { t: v.t, u: v.u };
+
+      // names / addresses make the file readable (they are not needed to import it)
+      for (const tab of gBrowser.tabs) {
+        const k = keyOf(tab);
+        if (!notes[k]) continue;
+        notes[k].title = tab.label || "";
+        try {
+          notes[k].url = tab.linkedBrowser.currentURI.spec;
+        } catch (e) {}
+      }
+      for (const f of document.querySelectorAll("zen-folder")) {
+        const k = keyOf(f);
+        if (notes[k]) notes[k].title = labelOf(f);
+      }
+      for (const v of Object.values(notes)) {
+        v.text = rawToHtml(v.t).replace(/<br>/g, "\n").replace(/<[^>]*>/g, "");
+      }
+
+      const count = Object.keys(notes).length;
+      if (!count) {
+        toast("There are no notes to export");
+        return;
+      }
+      const path = await pickFile(true);
+      if (!path) return;
+      await IOUtils.writeJSON(path, {
+        app: "ZolfModsTabNotes",
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        notes,
+      });
+      toast("Exported " + count + (count === 1 ? " note" : " notes"));
+    }
+
+    async function importNotes(replace) {
+      const path = await pickFile(false);
+      if (!path) return;
+
+      let data;
+      try {
+        data = await IOUtils.readJSON(path);
+      } catch (e) {
+        toast("Could not read that file");
+        return;
+      }
+      const incoming = data && typeof data.notes === "object" && data.notes ? data.notes : null;
+      if (!incoming) {
+        toast("That file does not contain tab notes");
+        return;
+      }
+
+      for (const w of [...windows]) closeWindow(w, false);
+
+      if (replace) store = {};
+      let count = 0;
+      for (const [k, v] of Object.entries(incoming)) {
+        if (!v || typeof v.t !== "string" || !hasText(rawToHtml(v.t))) continue;
+        const u = Number(v.u) || Date.now();
+        if (replace || !store[k] || u >= (store[k].u || 0)) {
+          store[k] = { t: v.t, u };
+          count++;
+        }
+      }
+      flushStore();
+
+      // the session copy of a tab wins over the file, so bring it in line
+      for (const tab of gBrowser.tabs) {
+        const k = keyOf(tab);
+        if (!k) continue;
+        try {
+          if (store[k]) SS.setCustomTabValue(tab, KEY, store[k].t);
+          else if (replace) SS.deleteCustomTabValue(tab, KEY);
+        } catch (e) {}
+      }
+      refreshAll();
+      toast("Imported " + count + (count === 1 ? " note" : " notes"));
+    }
+
+    // started from the "Notes backup" setting: it is a dropdown whose entries are actions; the
+    // setting is cleared again right away so that it always shows the idle entry
+    async function runBackupAction() {
+      const p = Services.prefs;
+      const name = ROOT + "backup";
+      if (!p.prefHasUserValue(name)) return;
+      const action = p.getStringPref(name, "");
+      p.clearUserPref(name);
+      try {
+        if (action === "export") await exportNotes();
+        else if (action === "import-merge") await importNotes(false);
+        else if (action === "import-replace") await importNotes(true);
+      } catch (e) {
+        console.error(LOG, "backup failed", e);
+        toast("The backup action failed - see the Browser Console");
+      }
+    }
+
     // ---- start-up ----
     function onResize() {
       if (transient) placeNear(transient, transient.subject._ztnIndicator || transient.subject);
@@ -963,7 +1117,7 @@
       setInterval(alignAllFolderIndicators, 400);
     }
 
-    return { init, refreshAll };
+    return { init, refreshAll, runBackupAction };
   })();
 
   // ---------------------------------------------------------------------
@@ -973,6 +1127,11 @@
     Services.prefs.addObserver(ROOT + "indicator", {
       observe() {
         TabNotes.refreshAll();
+      },
+    });
+    Services.prefs.addObserver(ROOT + "backup", {
+      observe() {
+        TabNotes.runBackupAction();
       },
     });
     TabNotes.init();

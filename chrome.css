@@ -192,6 +192,20 @@ zen-folder[ztn-note] .tab-group-label-container {
   position: relative;
 }
 
+/* note ICON on a folder: absolutely positioned right behind the folder icon (its left offset is
+   measured by the script); the name gets 32px more padding (Zen sets 32px with !important) */
+.ztn-note-icon.ztn-note-folder-icon {
+  position: absolute;
+  top: 50%;
+  left: 40px;
+  width: 24px;
+  height: 24px;
+  translate: 0 -50%;
+}
+zen-folder[ztn-note-icon] > .tab-group-label-container > label {
+  padding-inline-start: 64px !important;
+}
+
 /* ---- transparent layer under the window while editing (swallows the closing click) ---- */
 .ztn-note-scrim {
   position: fixed;
@@ -396,4 +410,27 @@ zen-folder[ztn-note] .tab-group-label-container {
 [ztn-suppress] {
   opacity: 0 !important;
   pointer-events: none !important;
+}
+
+/* small message after exporting / importing notes */
+.ztn-note-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 2147483000;
+  padding: 8px 14px;
+  color: var(--toolbar-color, #f0f0f4);
+  background: color-mix(in srgb, var(--zen-primary-color, #6c8cff) 16%, var(--zen-colors-secondary, var(--toolbar-bgcolor, #1c1b22)));
+  border: 1px solid var(--zen-colors-border, color-mix(in srgb, var(--zen-primary-color, #6c8cff) 30%, transparent));
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+  font: 13px/1.4 system-ui, sans-serif;
+  translate: -50% 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease, translate 150ms ease;
+}
+.ztn-note-toast[show] {
+  opacity: 1;
+  translate: -50% 0;
 }

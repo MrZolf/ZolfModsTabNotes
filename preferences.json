@@ -98,5 +98,25 @@
         "value": "large"
       }
     ]
+  },
+  {
+    "property": "mod.zolfmods.tab-notes.backup",
+    "label": "Notes backup",
+    "type": "dropdown",
+    "placeholder": "Export / import...",
+    "options": [
+      {
+        "label": "Export notes to a file",
+        "value": "export"
+      },
+      {
+        "label": "Import notes - merge",
+        "value": "import-merge"
+      },
+      {
+        "label": "Import notes - replace all",
+        "value": "import-replace"
+      }
+    ]
   }
 ]
