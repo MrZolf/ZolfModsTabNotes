@@ -391,3 +391,9 @@ zen-folder[ztn-note] .tab-group-label-container {
 .ztn-note-shield[active] {
   display: block;
 }
+
+/* a popup that opens while the pointer is on a note indicator is shown invisibly and closed at once */
+[ztn-suppress] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

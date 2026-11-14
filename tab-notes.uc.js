@@ -60,6 +60,7 @@
     let lastPointerTarget = null;
     let sidebarHeld = false;
     let weSetHover = false; // we added zen-has-hover ourselves and must take it back
+    let settleAt = 0; // when to check that the sidebar really went back to Zen's hands
     let lastPeekHover = 0; // last time the pointer was on a peeking note or its indicator
     const menuItems = {};
 
@@ -227,42 +228,41 @@
       Services.prefs.getStringPref(PREF_INDICATOR, "") === "icon" ? "icon" : "ribbon";
 
     // Zen draws the folder icon on its own (it takes no room in the row) and keeps the folder name
-    // clear of it with a left margin / padding on the name. A note icon put in front of the name
-    // would therefore land ON the folder icon. So that "room" is moved in front of the note icon:
-    // [folder icon][note icon][name].
-    function placeBeforeFolderLabel(ind, label) {
-      const startX = label.getBoundingClientRect().left;
-      const cs = getComputedStyle(label);
-      const lead = (parseFloat(cs.marginInlineStart) || 0) + (parseFloat(cs.paddingInlineStart) || 0);
-
-      label.before(ind);
+    // clear of it with an offset on the name. A note icon put in front of the name therefore sits at
+    // the start of the row, ON the folder icon, while the name is already where it should be.
+    // So the icon is only moved visually (translate) to the spot right in front of the name:
+    // [folder icon][note icon][name]. Nothing of Zen's is modified, and the offset is measured again
+    // all the time (the row changes with hover, collapse, renames...), so it cannot go stale.
+    function alignFolderIndicator(ind) {
+      const folder = ind.closest("zen-folder");
+      const label = folder && folder.querySelector(".tab-group-label");
+      if (!label) return;
+      if (ind.nextElementSibling !== label) label.before(ind); // Zen re-created the name
       ind._ztnLabel = label;
 
-      if (lead > 0) {
-        ind.style.marginInlineStart = lead + "px";
-        label.style.setProperty("margin-inline-start", "0", "important");
-        label.style.setProperty("padding-inline-start", "0", "important");
-      }
+      ind.style.translate = "";
+      const l = label.getBoundingClientRect();
+      const r = ind.getBoundingClientRect();
+      if (!l.width || !r.width) return; // not laid out (hidden sidebar / other space)
+      const marginEnd = parseFloat(getComputedStyle(ind).marginInlineEnd) || 0;
+      const gap = Math.round(l.left - (r.right + marginEnd));
+      if (Math.abs(gap) > 1) ind.style.translate = gap + "px 0";
+    }
 
-      // measure: the note icon must start exactly where the name used to start
-      if (startX > 0) {
-        const delta = startX - ind.getBoundingClientRect().left;
-        if (Math.abs(delta) > 1) {
-          ind.style.marginInlineStart = (parseFloat(ind.style.marginInlineStart) || 0) + delta + "px";
-        }
+    function alignAllFolderIndicators() {
+      for (const f of document.querySelectorAll("zen-folder[ztn-note]")) {
+        const ind = f._ztnIndicator;
+        if (ind && ind.isConnected && ind.classList.contains("ztn-note-inline")) alignFolderIndicator(ind);
       }
     }
 
+    function placeBeforeFolderLabel(ind, label) {
+      label.before(ind);
+      alignFolderIndicator(ind);
+    }
+
     function dropIndicator(s) {
-      const ind = s._ztnIndicator;
-      if (ind) {
-        const label = ind._ztnLabel;
-        if (label) {
-          label.style.removeProperty("margin-inline-start");
-          label.style.removeProperty("padding-inline-start");
-        }
-        ind.remove();
-      }
+      if (s._ztnIndicator) s._ztnIndicator.remove();
       s._ztnIndicator = null;
     }
 
@@ -372,6 +372,8 @@
       sidebarHeld = false;
       const tb = toolbox();
       if (!tb) return;
+      const keep = Services.prefs.getIntPref("zen.view.compact.sidebar-keep-hover.duration", 150);
+      settleAt = Date.now() + keep + 400;
       try {
         if (tb.matches(":hover")) {
           // the pointer is on the sidebar: make sure it stays open, and take our flag back when it leaves
@@ -390,13 +392,31 @@
             );
           }
         } else {
-          const keep = Services.prefs.getIntPref("zen.view.compact.sidebar-keep-hover.duration", 150);
           window.gZenCompactModeManager?.flashElement?.(tb, keep, "has-hover" + tb.id, "zen-has-hover");
         }
       } catch (e) {
         console.error(LOG, "could not hand the sidebar back", e);
       }
       tb.removeAttribute("has-popup-menu");
+    }
+
+    // Some time after the hand-back: if nothing holds the sidebar any more (no note window, the
+    // pointer is elsewhere, no popup is open) then none of the attributes that keep it visible
+    // may still be there. Whatever is left over is stale and would keep it open for good.
+    function popupOpen() {
+      for (const p of document.querySelectorAll("panel, menupopup, tooltip")) {
+        if (p.state === "open" || p.state === "showing") return true;
+      }
+      return false;
+    }
+
+    function settleSidebar() {
+      const tb = toolbox();
+      if (!tb || sidebarHeld || transient || !compactMode()) return;
+      if (tb.matches(":hover") || popupOpen() || window.gURLBar?.focused) return;
+      for (const attr of ["zen-has-hover", "zen-has-implicit-hover", "has-popup-menu"]) {
+        tb.removeAttribute(attr);
+      }
     }
 
     function updateHold() {
@@ -841,8 +861,11 @@
       const popup = e.target;
 
       if (overIndicator && !ALLOWED_POPUPS.has(popup.id)) {
-        e.preventDefault();
-        e.stopPropagation();
+        // Let it open - invisibly - and close it as soon as it is shown. Cancelling it instead
+        // leaves Zen's own bookkeeping behind: Zen marks the sidebar as "has a popup" before it
+        // opens one and only clears that when the popup hides, so a cancelled folder search popup
+        // kept the compact sidebar open until another one was shown and hidden.
+        popup.setAttribute("ztn-suppress", "true");
         return;
       }
 
@@ -854,6 +877,10 @@
     // exception somewhere) a note window that is only being peeked at must close once the pointer
     // is gone, and the sidebar must never stay held without a window.
     function reconcile() {
+      if (settleAt && Date.now() >= settleAt) {
+        settleAt = 0;
+        settleSidebar();
+      }
       if (!transient && !sidebarHeld) return;
       try {
         if (transient && !transient.el.isConnected) closeWindow(transient, false);
@@ -878,6 +905,19 @@
 
     function init() {
       document.addEventListener("popupshowing", onPopupShowing, true);
+      document.addEventListener(
+        "popupshown",
+        (e) => {
+          const p = e.target;
+          if (p.hasAttribute && p.hasAttribute("ztn-suppress")) {
+            try {
+              p.hidePopup();
+            } catch (err) {}
+          }
+        },
+        true
+      );
+      document.addEventListener("popuphidden", (e) => e.target.removeAttribute?.("ztn-suppress"), true);
       for (const id of ALLOWED_POPUPS) bindMenu(document.getElementById(id));
       for (const type of ["mousedown", "contextmenu"]) {
         document.addEventListener(type, (e) => (lastPointerTarget = e.target), true);
@@ -920,6 +960,7 @@
       setTimeout(refreshAll, 6000);
       setTimeout(pruneStore, 15000);
       setInterval(reconcile, 500);
+      setInterval(alignAllFolderIndicators, 400);
     }
 
     return { init, refreshAll };
