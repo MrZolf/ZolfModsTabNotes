@@ -527,6 +527,8 @@
 
     // put the focus back where the user was typing (end of the note when there is no better idea)
     function restoreCaret(w) {
+      w.restoring = true;
+      setTimeout(() => (w.restoring = false), 80);
       const r = w.lastRange;
       if (r && r.startContainer.isConnected && w.text.contains(r.startContainer)) {
         w.text.focus();
@@ -660,6 +662,7 @@
         // a click that lands before the first character (or the browser's own default) starts at the
         // top: editing should start at the END of the note
         setTimeout(() => {
+          if (w.restoring) return;
           const sel = window.getSelection();
           if (!sel.rangeCount || !sel.isCollapsed || !w.text.contains(sel.anchorNode)) return;
           const before = document.createRange();
@@ -670,34 +673,49 @@
       });
       w.text.addEventListener("blur", (e) => {
         if (w.mode !== "edit" || !w.el.hasAttribute("open")) return; // detached windows stay open
-        if (e.relatedTarget && w.el.contains(e.relatedTarget)) return;
-        if (Date.now() - w.openedAt < 500 || Date.now() - (w.lastKeyAt || 0) < 300) {
-          // the context menu was still closing, or a cursor key made something else grab the focus:
-          // take it back, with the caret where it was
-          setTimeout(() => restoreCaret(w), 0);
+        if (e.relatedTarget && w.el.contains(e.relatedTarget)) return; // a button of this window
+
+        const justOpened = Date.now() - w.openedAt < 500;
+        if (!e.relatedTarget || justOpened) {
+          // The focus went "nowhere" (a closing menu, another process, a key that something else
+          // grabbed...). That is not the user leaving the note - a click outside is caught by the
+          // scrim - so take the focus back, unless the whole window was deactivated.
+          if (justOpened || document.hasFocus()) {
+            setTimeout(() => {
+              if (w.mode === "edit" && w.el.hasAttribute("open")) restoreCaret(w);
+            }, 0);
+          }
           return;
         }
-        console.debug(LOG, "note window closed because it lost the focus", {
+        console.debug(LOG, "note window closed because the focus moved to another element", {
           to: e.relatedTarget,
-          active: document.activeElement,
         });
         closeWindow(w, true);
       });
       w.text.addEventListener("keydown", (e) => {
-        w.lastKeyAt = Date.now();
-        e.stopPropagation();
+        // No stopPropagation here: cursor keys, copy / paste / undo and the like are executed by
+        // window-level key handlers, which only get to see the event while it keeps propagating.
         if (e.key === "Escape") {
           e.preventDefault();
+          e.stopPropagation();
           closeWindow(w, true);
         } else if (e.key === "Enter" && !e.isComposing) {
           e.preventDefault();
+          e.stopPropagation();
           if (e.shiftKey) document.execCommand("insertLineBreak");
           else closeWindow(w, true); // Enter closes, Shift+Enter = new line
+        } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+          // Ctrl+B / I / U format the text here instead of reaching Zen's own shortcuts
+          const cmd = { b: "bold", i: "italic", u: "underline" }[e.key.toLowerCase()];
+          if (cmd) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.execCommand(cmd);
+            updateFormatButtons();
+            scheduleSave(w);
+          }
         }
       });
-      for (const type of ["keyup", "keypress"]) {
-        w.text.addEventListener(type, (e) => e.stopPropagation());
-      }
       w.text.addEventListener("paste", (e) => {
         e.preventDefault(); // plain text only
         const text = (e.clipboardData?.getData("text/plain") || "").replace(/\r\n?/g, "\n");
@@ -980,12 +998,13 @@
       }
       const path = await pickFile(true);
       if (!path) return;
-      await IOUtils.writeJSON(path, {
+      const data = {
         app: "ZolfModsTabNotes",
         version: 2,
         exportedAt: new Date().toISOString(),
         notes,
-      });
+      };
+      await IOUtils.writeUTF8(path, JSON.stringify(data, null, 2) + "\n"); // indented, one field per line
       toast("Exported " + count + (count === 1 ? " note" : " notes"));
     }
 
@@ -1038,16 +1057,30 @@
     async function runBackupAction() {
       const p = Services.prefs;
       const name = ROOT + "backup";
-      if (!p.prefHasUserValue(name)) return;
-      const action = p.getStringPref(name, "");
-      p.clearUserPref(name);
+      let action = "";
+      try {
+        action = p.getStringPref(name, "");
+      } catch (e) {}
+      if (!["export", "import-merge", "import-replace"].includes(action)) return;
+
+      // Back to the idle entry: the built-in first entry of a dropdown has the value "none".
+      // Done now, after the action, and once more later in case the settings page writes again.
+      const idle = () => {
+        try {
+          if (p.getStringPref(name, "") !== "none") p.setStringPref(name, "none");
+        } catch (e) {}
+      };
+      idle();
       try {
         if (action === "export") await exportNotes();
         else if (action === "import-merge") await importNotes(false);
-        else if (action === "import-replace") await importNotes(true);
+        else await importNotes(true);
       } catch (e) {
         console.error(LOG, "backup failed", e);
         toast("The backup action failed - see the Browser Console");
+      } finally {
+        idle();
+        setTimeout(idle, 1000);
       }
     }
 
