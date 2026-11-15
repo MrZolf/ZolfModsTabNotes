@@ -420,7 +420,7 @@
       scrim.addEventListener("mousedown", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (transient) closeWindow(transient, true);
+        if (transient) closeWindow(transient, true, "click outside the note (scrim)");
       });
       for (const type of ["mouseup", "click", "dblclick", "auxclick", "contextmenu"]) {
         scrim.addEventListener(type, (e) => {
@@ -619,7 +619,7 @@
 
       const closeBtn = h("button", "ztn-note-close", "×");
       closeBtn.setAttribute("title", "Close");
-      closeBtn.addEventListener("click", () => closeWindow(w, true));
+      closeBtn.addEventListener("click", () => closeWindow(w, true, "close button"));
 
       head.append(h("span", "ztn-note-label", "Note"), w.title, bar, closeBtn);
       head.addEventListener("mousedown", (e) => {
@@ -676,11 +676,13 @@
         if (e.relatedTarget && w.el.contains(e.relatedTarget)) return; // a button of this window
 
         const justOpened = Date.now() - w.openedAt < 500;
-        if (!e.relatedTarget || justOpened) {
+        const afterCursorKey = Date.now() - lastNavKeyAt < 500;
+        if (debugOn()) console.debug(LOG, "note lost the focus", { to: e.relatedTarget, afterCursorKey, justOpened });
+        if (!e.relatedTarget || justOpened || afterCursorKey) {
           // The focus went "nowhere" (a closing menu, another process, a key that something else
           // grabbed...). That is not the user leaving the note - a click outside is caught by the
           // scrim - so take the focus back, unless the whole window was deactivated.
-          if (justOpened || document.hasFocus()) {
+          if (justOpened || afterCursorKey || document.hasFocus()) {
             setTimeout(() => {
               if (w.mode === "edit" && w.el.hasAttribute("open")) restoreCaret(w);
             }, 0);
@@ -690,7 +692,7 @@
         console.debug(LOG, "note window closed because the focus moved to another element", {
           to: e.relatedTarget,
         });
-        closeWindow(w, true);
+        closeWindow(w, true, "focus moved to another element");
       });
       w.text.addEventListener("keydown", (e) => {
         // No stopPropagation here: cursor keys, copy / paste / undo and the like are executed by
@@ -698,12 +700,12 @@
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
-          closeWindow(w, true);
+          closeWindow(w, true, "Escape");
         } else if (e.key === "Enter" && !e.isComposing) {
           e.preventDefault();
           e.stopPropagation();
           if (e.shiftKey) document.execCommand("insertLineBreak");
-          else closeWindow(w, true); // Enter closes, Shift+Enter = new line
+          else closeWindow(w, true, "Enter"); // Enter closes, Shift+Enter = new line
         } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
           // Ctrl+B / I / U format the text here instead of reaching Zen's own shortcuts
           const cmd = { b: "bold", i: "italic", u: "underline" }[e.key.toLowerCase()];
@@ -752,7 +754,7 @@
         }
         return;
       }
-      if (transient) closeWindow(transient, true);
+      if (transient) closeWindow(transient, true, "another note window was opened");
 
       ensureLayers();
       const w = buildWindow(subject);
@@ -773,8 +775,10 @@
       if (mode === "edit") focusEnd(w);
     }
 
-    function closeWindow(w, save) {
+    function closeWindow(w, save, reason) {
       if (!windows.has(w)) return;
+      // always logged (Browser Console, level "Debug"): when a window closes by itself this says why
+      console.debug(LOG, "closing a note window:", reason || "unspecified", reason ? "" : new Error().stack);
       clearTimeout(w.saveTimer);
       if (save) {
         try {
@@ -800,8 +804,8 @@
       updateHold();
     }
 
-    function closeWindowsOf(subject, save) {
-      for (const w of [...windows]) if (w.subject === subject) closeWindow(w, save);
+    function closeWindowsOf(subject, save, reason) {
+      for (const w of [...windows]) if (w.subject === subject) closeWindow(w, save, reason);
     }
 
     function scheduleShow(subject) {
@@ -814,12 +818,12 @@
       clearTimeout(showTimer);
       clearTimeout(hideTimer);
       hideTimer = setTimeout(() => {
-        if (transient && transient.mode === "peek") closeWindow(transient, true);
+        if (transient && transient.mode === "peek") closeWindow(transient, true, "the pointer left the note");
       }, delay);
     }
 
     function deleteNote(subject) {
-      closeWindowsOf(subject, false);
+      closeWindowsOf(subject, false, "note deleted");
       saveNote(subject, "");
     }
 
@@ -921,13 +925,13 @@
       }
       if (!transient && !sidebarHeld) return;
       try {
-        if (transient && !transient.el.isConnected) closeWindow(transient, false);
+        if (transient && !transient.el.isConnected) closeWindow(transient, false, "watchdog: window element is gone");
         const t = transient;
         if (t && t.mode === "peek") {
           const ind = t.subject._ztnIndicator;
           const over = t.el.matches(":hover") || (!!ind && ind.isConnected && ind.matches(":hover"));
           if (over) lastPeekHover = Date.now();
-          else if (Date.now() - lastPeekHover > 600) closeWindow(t, true);
+          else if (Date.now() - lastPeekHover > 600) closeWindow(t, true, "watchdog: pointer is not on the note");
         }
         updateHold();
       } catch (e) {
@@ -1025,7 +1029,7 @@
         return;
       }
 
-      for (const w of [...windows]) closeWindow(w, false);
+      for (const w of [...windows]) closeWindow(w, false, "import");
 
       if (replace) store = {};
       let count = 0;
@@ -1084,6 +1088,54 @@
       }
     }
 
+    // ---- cursor keys inside a note ----
+    // Whatever Zen, a mod or an extension does with cursor keys, in a note they must only move the
+    // caret. This listener sits at the very start of the event path (window, capture phase): it hides
+    // the key from everything after it and moves the caret itself (Selection.modify).
+    const NAV_KEYS = {
+      ArrowLeft: ["backward", "character"],
+      ArrowRight: ["forward", "character"],
+      ArrowUp: ["backward", "line"],
+      ArrowDown: ["forward", "line"],
+      Home: ["backward", "lineboundary"],
+      End: ["forward", "lineboundary"],
+    };
+    let lastNavKeyAt = 0;
+    const debugOn = () => Services.prefs.getBoolPref(ROOT + "debug", false);
+
+    function noteWindowOf(node) {
+      const ed = node && node.closest ? node.closest(".ztn-note-text") : null;
+      if (!ed) return null;
+      for (const w of windows) if (w.text === ed) return w;
+      return null;
+    }
+
+    function onGlobalKeydown(e) {
+      const w = noteWindowOf(e.target);
+      if (!w) return;
+      w.lastKeyAt = Date.now();
+      const spec = NAV_KEYS[e.key] || null;
+      if (spec) lastNavKeyAt = Date.now();
+      if (debugOn()) console.debug(LOG, "keydown in a note", e.key, { handled: !!spec, path: e.composedPath().length });
+      if (!spec || e.altKey || e.isComposing) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      let [direction, granularity] = spec;
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && (e.key === "ArrowLeft" || e.key === "ArrowRight")) granularity = "word";
+      if (ctrl && (e.key === "Home" || e.key === "End")) granularity = "documentboundary";
+
+      const sel = window.getSelection();
+      if (!e.shiftKey && !sel.isCollapsed && granularity === "character") {
+        // like a normal text field: the arrow collapses a selection to its start / end
+        if (direction === "backward") sel.collapseToStart();
+        else sel.collapseToEnd();
+        return;
+      }
+      sel.modify(e.shiftKey ? "extend" : "move", direction, granularity);
+    }
+
     // ---- start-up ----
     function onResize() {
       if (transient) placeNear(transient, transient.subject._ztnIndicator || transient.subject);
@@ -1110,11 +1162,12 @@
         document.addEventListener(type, (e) => (lastPointerTarget = e.target), true);
       }
       document.addEventListener("selectionchange", updateFormatButtons);
+      window.addEventListener("keydown", onGlobalKeydown, true);
       window.addEventListener("resize", onResize);
 
       const tabs = gBrowser.tabContainer;
       tabs.addEventListener("SSTabRestored", (e) => refresh(e.target));
-      tabs.addEventListener("TabClose", (e) => closeWindowsOf(e.target, true));
+      tabs.addEventListener("TabClose", (e) => closeWindowsOf(e.target, true, "the tab was closed"));
       window.addEventListener("SSWindowStateReady", refreshAll);
 
       // a tab can become / stop being an Essential at any time
@@ -1129,7 +1182,7 @@
         clearTimeout(folderTimer);
         folderTimer = setTimeout(() => {
           refreshFolders();
-          for (const w of [...windows]) if (!w.subject.isConnected) closeWindow(w, true);
+          for (const w of [...windows]) if (!w.subject.isConnected) closeWindow(w, true, "its tab / folder left the page");
         }, 300);
       }).observe(tabs, { subtree: true, childList: true });
 
