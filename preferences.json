@@ -84,6 +84,26 @@
     ]
   },
   {
+    "property": "mod.zolfmods.tab-notes.unloaded",
+    "label": "Indicator on unloaded tabs",
+    "type": "dropdown",
+    "placeholder": "Slightly grayed out",
+    "options": [
+      {
+        "label": "Not grayed out",
+        "value": "off"
+      },
+      {
+        "label": "Grayed out",
+        "value": "medium"
+      },
+      {
+        "label": "Strongly grayed out",
+        "value": "strong"
+      }
+    ]
+  },
+  {
     "property": "mod.zolfmods.tab-notes.window-size",
     "label": "Note window size",
     "type": "dropdown",
@@ -116,6 +136,10 @@
       {
         "label": "Import notes - replace all",
         "value": "import-replace"
+      },
+      {
+        "label": "Clean up notes of closed tabs",
+        "value": "cleanup"
       }
     ]
   }

@@ -169,18 +169,56 @@
       }, 400);
     }
 
+    // keys of everything that exists right now
+    function liveKeys() {
+      const live = new Set();
+      for (const t of gBrowser.tabs) if (t.id) live.add(t.id);
+      for (const f of document.querySelectorAll("zen-folder")) if (f.id) live.add("folder:" + f.id);
+      return live;
+    }
+
+    // notes of tabs / folders that have not been seen for two weeks (closed tabs keep their note in
+    // the session data that "Restore closed tab" brings back; the file does not need them)
     function pruneStore() {
-      const open = new Set(Array.from(gBrowser.tabs, (t) => t.id).filter(Boolean));
-      for (const f of document.querySelectorAll("zen-folder")) if (f.id) open.add("folder:" + f.id);
-      const cutoff = Date.now() - 120 * 24 * 3600 * 1000;
+      if (!gBrowser.tabs.length) return;
+      const live = liveKeys();
+      const cutoff = Date.now() - 14 * 24 * 3600 * 1000;
       let changed = false;
       for (const [k, v] of Object.entries(store)) {
-        if (!open.has(k) && (v.u || 0) < cutoff) {
+        if (!live.has(k) && (v.s || v.u || 0) < cutoff) {
           delete store[k];
           changed = true;
         }
       }
       if (changed) flushStore();
+    }
+
+    // right away, on request: everything the file keeps for tabs / folders that do not exist
+    function cleanupLeftovers() {
+      const live = liveKeys();
+      let removed = 0;
+      for (const k of Object.keys(store)) {
+        if (!live.has(k)) {
+          delete store[k];
+          removed++;
+        }
+      }
+      if (removed) flushStore();
+      return removed;
+    }
+
+    // a closed tab keeps its note in its session data; pinned tabs / Essentials stay (Zen keeps them)
+    function forgetClosedTab(tab) {
+      try {
+        if (Services.startup.shuttingDown || tab.pinned || tab.hasAttribute("zen-essential")) return;
+      } catch (e) {
+        return;
+      }
+      const k = keyOf(tab);
+      if (k && store[k]) {
+        delete store[k];
+        flushStore();
+      }
     }
 
     function getRaw(s) {
@@ -208,8 +246,12 @@
       const raw = HTML_PREFIX + html;
       if (!isFolder(s)) {
         try {
-          if (has) SS.setCustomTabValue(s, KEY, raw);
-          else SS.deleteCustomTabValue(s, KEY);
+          if (has) {
+            SS.setCustomTabValue(s, KEY, raw);
+          } else {
+            SS.deleteCustomTabValue(s, KEY);
+            SS.deleteCustomTabValue(s, LEGACY_KEY);
+          }
         } catch (e) {
           console.error(LOG, "could not save note to the session", e);
         }
@@ -316,6 +358,19 @@
         try {
           if (!SS.getCustomTabValue(s, KEY)) SS.setCustomTabValue(s, KEY, raw);
         } catch (e) {}
+      }
+      // ... and the file in sync with what the tab / folder really has ("s" = last time seen alive)
+      const k = keyOf(s);
+      if (k) {
+        const now = Date.now();
+        const entry = store[k];
+        if (!entry || entry.t !== raw) {
+          store[k] = { t: raw, u: (entry && entry.u) || now, s: now };
+          flushStore();
+        } else if (!entry.s || now - entry.s > 12 * 3600 * 1000) {
+          entry.s = now;
+          flushStore();
+        }
       }
 
       const mode = indicatorMode();
@@ -968,32 +1023,28 @@
     }
 
     async function exportNotes() {
-      // make sure the file knows every note that currently lives in a tab's session data
-      for (const tab of gBrowser.tabs) {
-        const k = keyOf(tab);
-        const raw = getRaw(tab);
-        if (k && raw && hasText(rawToHtml(raw)) && !store[k]) store[k] = { t: raw, u: Date.now() };
-      }
-
+      // only notes that belong to a tab / folder that exists right now - nothing left over
       const notes = {};
-      for (const [k, v] of Object.entries(store)) notes[k] = { t: v.t, u: v.u };
-
-      // names / addresses make the file readable (they are not needed to import it)
+      const add = (s, title, url) => {
+        const k = keyOf(s);
+        const raw = getRaw(s);
+        if (!k || !raw || !hasText(rawToHtml(raw))) return;
+        notes[k] = {
+          t: raw,
+          u: (store[k] && store[k].u) || Date.now(),
+          title,
+          text: rawToHtml(raw).replace(/<br>/g, "\n").replace(/<[^>]*>/g, ""),
+        };
+        if (url) notes[k].url = url;
+      };
       for (const tab of gBrowser.tabs) {
-        const k = keyOf(tab);
-        if (!notes[k]) continue;
-        notes[k].title = tab.label || "";
+        let url = "";
         try {
-          notes[k].url = tab.linkedBrowser.currentURI.spec;
+          url = tab.linkedBrowser.currentURI.spec;
         } catch (e) {}
+        add(tab, tab.label || "", url);
       }
-      for (const f of document.querySelectorAll("zen-folder")) {
-        const k = keyOf(f);
-        if (notes[k]) notes[k].title = labelOf(f);
-      }
-      for (const v of Object.values(notes)) {
-        v.text = rawToHtml(v.t).replace(/<br>/g, "\n").replace(/<[^>]*>/g, "");
-      }
+      for (const f of document.querySelectorAll("zen-folder")) add(f, labelOf(f), "");
 
       const count = Object.keys(notes).length;
       if (!count) {
@@ -1065,7 +1116,7 @@
       try {
         action = p.getStringPref(name, "");
       } catch (e) {}
-      if (!["export", "import-merge", "import-replace"].includes(action)) return;
+      if (!["export", "import-merge", "import-replace", "cleanup"].includes(action)) return;
 
       // Back to the idle entry: the built-in first entry of a dropdown has the value "none".
       // Done now, after the action, and once more later in case the settings page writes again.
@@ -1076,9 +1127,16 @@
       };
       idle();
       try {
-        if (action === "export") await exportNotes();
-        else if (action === "import-merge") await importNotes(false);
-        else await importNotes(true);
+        if (action === "export") {
+          await exportNotes();
+        } else if (action === "cleanup") {
+          const n = cleanupLeftovers();
+          toast(n ? "Removed " + n + (n === 1 ? " leftover note" : " leftover notes") : "No leftover notes found");
+        } else if (action === "import-merge") {
+          await importNotes(false);
+        } else {
+          await importNotes(true);
+        }
       } catch (e) {
         console.error(LOG, "backup failed", e);
         toast("The backup action failed - see the Browser Console");
@@ -1167,7 +1225,16 @@
 
       const tabs = gBrowser.tabContainer;
       tabs.addEventListener("SSTabRestored", (e) => refresh(e.target));
-      tabs.addEventListener("TabClose", (e) => closeWindowsOf(e.target, true, "the tab was closed"));
+      tabs.addEventListener("TabClose", (e) => {
+        closeWindowsOf(e.target, true, "the tab was closed");
+        forgetClosedTab(e.target);
+      });
+      // tabs restored but not loaded yet get their id / session data a little after they are created
+      tabs.addEventListener("TabOpen", (e) => {
+        const tab = e.target;
+        setTimeout(() => refresh(tab), 300);
+        setTimeout(() => refresh(tab), 2000);
+      });
       window.addEventListener("SSWindowStateReady", refreshAll);
 
       // a tab can become / stop being an Essential at any time
@@ -1175,13 +1242,13 @@
         for (const r of records) {
           if (r.target?.localName === "tab") refresh(r.target);
         }
-      }).observe(tabs, { subtree: true, attributes: true, attributeFilter: ["zen-essential"] });
+      }).observe(tabs, { subtree: true, attributes: true, attributeFilter: ["zen-essential", "id", "pending"] });
 
       // folders are created / restored by Zen after start-up
       new MutationObserver(() => {
         clearTimeout(folderTimer);
         folderTimer = setTimeout(() => {
-          refreshFolders();
+          refreshAll();
           for (const w of [...windows]) if (!w.subject.isConnected) closeWindow(w, true, "its tab / folder left the page");
         }, 300);
       }).observe(tabs, { subtree: true, childList: true });
@@ -1198,7 +1265,13 @@
       // session data can arrive a little after startup
       setTimeout(refreshAll, 2000);
       setTimeout(refreshAll, 6000);
-      setTimeout(pruneStore, 15000);
+      // restoring hundreds of tabs takes a while: look again every 2 s for the first 90 s
+      let ticks = 0;
+      const startup = setInterval(() => {
+        refreshAll();
+        if (++ticks >= 45) clearInterval(startup);
+      }, 2000);
+      setTimeout(pruneStore, 60000);
       setInterval(reconcile, 500);
       setInterval(alignAllFolderIndicators, 400);
     }
