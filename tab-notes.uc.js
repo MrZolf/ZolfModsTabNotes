@@ -750,8 +750,7 @@
         closeWindow(w, true, "focus moved to another element");
       });
       w.text.addEventListener("keydown", (e) => {
-        // No stopPropagation here: cursor keys, copy / paste / undo and the like are executed by
-        // window-level key handlers, which only get to see the event while it keeps propagating.
+        // Editing keys are handled earlier, by onGlobalKeydown (window, capture phase).
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
@@ -759,27 +758,14 @@
         } else if (e.key === "Enter" && !e.isComposing) {
           e.preventDefault();
           e.stopPropagation();
-          if (e.shiftKey) document.execCommand("insertLineBreak");
+          if (e.shiftKey) insertLineBreak(w);
           else closeWindow(w, true, "Enter"); // Enter closes, Shift+Enter = new line
-        } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
-          // Ctrl+B / I / U format the text here instead of reaching Zen's own shortcuts
-          const cmd = { b: "bold", i: "italic", u: "underline" }[e.key.toLowerCase()];
-          if (cmd) {
-            e.preventDefault();
-            e.stopPropagation();
-            document.execCommand(cmd);
-            updateFormatButtons();
-            scheduleSave(w);
-          }
         }
       });
       w.text.addEventListener("paste", (e) => {
         e.preventDefault(); // plain text only
-        const text = (e.clipboardData?.getData("text/plain") || "").replace(/\r\n?/g, "\n");
-        text.split("\n").forEach((line, i) => {
-          if (i) document.execCommand("insertLineBreak");
-          if (line) document.execCommand("insertText", false, line);
-        });
+        w.pasteExpected = false;
+        insertPlain(w, e.clipboardData?.getData("text/plain") || "");
       });
       w.text.addEventListener("drop", (e) => e.preventDefault());
 
@@ -1025,17 +1011,30 @@
     async function exportNotes() {
       // only notes that belong to a tab / folder that exists right now - nothing left over
       const notes = {};
+      const skipped = [];
+      let byAddress = 0;
       const add = (s, title, url) => {
-        const k = keyOf(s);
         const raw = getRaw(s);
-        if (!k || !raw || !hasText(rawToHtml(raw))) return;
-        notes[k] = {
+        if (!raw || !hasText(rawToHtml(raw))) return;
+        let k = keyOf(s);
+        const entry = {
           t: raw,
-          u: (store[k] && store[k].u) || Date.now(),
+          u: (k && store[k] && store[k].u) || Date.now(),
           title,
           text: rawToHtml(raw).replace(/<br>/g, "\n").replace(/<[^>]*>/g, ""),
         };
-        if (url) notes[k].url = url;
+        if (url) entry.url = url;
+        if (!k) {
+          // a tab without an id (Zen did not give it one): such a note is matched by the page address
+          if (isFolder(s) || !url) {
+            skipped.push({ title, url, reason: "no id and no address" });
+            return;
+          }
+          k = "url:" + url;
+          entry.matchedBy = "address";
+          byAddress++;
+        }
+        notes[k] = entry;
       };
       for (const tab of gBrowser.tabs) {
         let url = "";
@@ -1047,6 +1046,7 @@
       for (const f of document.querySelectorAll("zen-folder")) add(f, labelOf(f), "");
 
       const count = Object.keys(notes).length;
+      if (skipped.length) console.warn(LOG, "notes that could not be exported", skipped);
       if (!count) {
         toast("There are no notes to export");
         return;
@@ -1059,8 +1059,13 @@
         exportedAt: new Date().toISOString(),
         notes,
       };
+      if (skipped.length) data.skipped = skipped;
       await IOUtils.writeUTF8(path, JSON.stringify(data, null, 2) + "\n"); // indented, one field per line
-      toast("Exported " + count + (count === 1 ? " note" : " notes"));
+      toast(
+        "Exported " + count + (count === 1 ? " note" : " notes") +
+          (byAddress ? " (" + byAddress + " matched by page address)" : "") +
+          (skipped.length ? ", " + skipped.length + " could not be exported" : "")
+      );
     }
 
     async function importNotes(replace) {
@@ -1084,8 +1089,14 @@
 
       if (replace) store = {};
       let count = 0;
+      const byUrl = {};
       for (const [k, v] of Object.entries(incoming)) {
         if (!v || typeof v.t !== "string" || !hasText(rawToHtml(v.t))) continue;
+        if (k.startsWith("url:")) {
+          byUrl[k.slice(4)] = v.t; // exported from a tab without an id: goes to tabs with that address
+          count++;
+          continue;
+        }
         const u = Number(v.u) || Date.now();
         if (replace || !store[k] || u >= (store[k].u || 0)) {
           store[k] = { t: v.t, u };
@@ -1097,7 +1108,13 @@
       // the session copy of a tab wins over the file, so bring it in line
       for (const tab of gBrowser.tabs) {
         const k = keyOf(tab);
-        if (!k) continue;
+        if (!k) {
+          try {
+            const raw = byUrl[tab.linkedBrowser.currentURI.spec];
+            if (raw && (replace || !getRaw(tab))) SS.setCustomTabValue(tab, KEY, raw);
+          } catch (e) {}
+          continue;
+        }
         try {
           if (store[k]) SS.setCustomTabValue(tab, KEY, store[k].t);
           else if (replace) SS.deleteCustomTabValue(tab, KEY);
@@ -1109,17 +1126,18 @@
 
     // started from the "Notes backup" setting: it is a dropdown whose entries are actions; the
     // setting is cleared again right away so that it always shows the idle entry
-    async function runBackupAction() {
+    // Settings dropdowns whose entries are actions: run the action, then put the setting back to the
+    // idle entry (the built-in first entry of a dropdown has the value "none"). Done now, after the
+    // action, and once more later in case the settings page writes the value again.
+    async function runAction(prefName, actions) {
       const p = Services.prefs;
-      const name = ROOT + "backup";
+      const name = ROOT + prefName;
       let action = "";
       try {
         action = p.getStringPref(name, "");
       } catch (e) {}
-      if (!["export", "import-merge", "import-replace", "cleanup"].includes(action)) return;
+      if (!actions[action]) return;
 
-      // Back to the idle entry: the built-in first entry of a dropdown has the value "none".
-      // Done now, after the action, and once more later in case the settings page writes again.
       const idle = () => {
         try {
           if (p.getStringPref(name, "") !== "none") p.setStringPref(name, "none");
@@ -1127,71 +1145,88 @@
       };
       idle();
       try {
-        if (action === "export") {
-          await exportNotes();
-        } else if (action === "cleanup") {
-          const n = cleanupLeftovers();
-          toast(n ? "Removed " + n + (n === 1 ? " leftover note" : " leftover notes") : "No leftover notes found");
-        } else if (action === "import-merge") {
-          await importNotes(false);
-        } else {
-          await importNotes(true);
-        }
+        await actions[action]();
       } catch (e) {
-        console.error(LOG, "backup failed", e);
-        toast("The backup action failed - see the Browser Console");
+        console.error(LOG, prefName + " failed", e);
+        toast("The action failed - see the Browser Console");
       } finally {
         idle();
         setTimeout(idle, 1000);
       }
     }
 
-    // ---- cursor keys inside a note ----
-    // Whatever Zen, a mod or an extension does with cursor keys, in a note they must only move the
-    // caret. This listener sits at the very start of the event path (window, capture phase): it hides
-    // the key from everything after it and moves the caret itself (Selection.modify).
-    const NAV_KEYS = {
-      ArrowLeft: ["backward", "character"],
-      ArrowRight: ["forward", "character"],
-      ArrowUp: ["backward", "line"],
-      ArrowDown: ["forward", "line"],
-      Home: ["backward", "lineboundary"],
-      End: ["forward", "lineboundary"],
-    };
-    let lastNavKeyAt = 0;
-    const debugOn = () => Services.prefs.getBoolPref(ROOT + "debug", false);
+    const runBackupAction = () =>
+      runAction("backup", {
+        export: () => exportNotes(),
+        "import-merge": () => importNotes(false),
+        "import-replace": () => importNotes(true),
+      });
 
-    function noteWindowOf(node) {
-      const ed = node && node.closest ? node.closest(".ztn-note-text") : null;
-      if (!ed) return null;
-      for (const w of windows) if (w.text === ed) return w;
-      return null;
-    }
+    const runDeleteAction = () =>
+      runAction("delete", {
+        cleanup: async () => {
+          const n = cleanupLeftovers();
+          toast(n ? "Removed " + n + (n === 1 ? " leftover note" : " leftover notes") : "No leftover notes found");
+        },
+        "delete-all": () => deleteAllNotesData(),
+      });
 
-    function onGlobalKeydown(e) {
-      const w = noteWindowOf(e.target);
-      if (!w) return;
-      w.lastKeyAt = Date.now();
-      const spec = NAV_KEYS[e.key] || null;
-      if (spec) lastNavKeyAt = Date.now();
-      if (debugOn()) console.debug(LOG, "keydown in a note", e.key, { handled: !!spec, path: e.composedPath().length });
-      if (!spec || e.altKey || e.isComposing) return;
+    // ABSOLUTELY everything about notes: every note, the notes file, what older versions of the mod
+    // (and the RandomZenTweaks mod) left behind - session data, files and settings
+    async function deleteAllNotesData() {
+      const prompt = Services.prompt;
+      const choice = prompt.confirmEx(
+        window,
+        "Delete ALL notes data",
+        "This deletes every note of every tab and folder, the notes file and everything that older " +
+          "versions of this mod (and the RandomZenTweaks mod) left behind. It cannot be undone.\n\n" +
+          "Tip: export your notes first.",
+        prompt.BUTTON_POS_0 * prompt.BUTTON_TITLE_IS_STRING +
+          prompt.BUTTON_POS_1 * prompt.BUTTON_TITLE_CANCEL +
+          prompt.BUTTON_POS_1_DEFAULT,
+        "Delete everything",
+        null,
+        null,
+        null,
+        {}
+      );
+      if (choice !== 0) return;
 
-      e.preventDefault();
-      e.stopPropagation();
-      let [direction, granularity] = spec;
-      const ctrl = e.ctrlKey || e.metaKey;
-      if (ctrl && (e.key === "ArrowLeft" || e.key === "ArrowRight")) granularity = "word";
-      if (ctrl && (e.key === "Home" || e.key === "End")) granularity = "documentboundary";
+      for (const w of [...windows]) closeWindow(w, false, "delete all notes data");
+      clearTimeout(flushTimer);
+      store = {};
 
-      const sel = window.getSelection();
-      if (!e.shiftKey && !sel.isCollapsed && granularity === "character") {
-        // like a normal text field: the arrow collapses a selection to its start / end
-        if (direction === "backward") sel.collapseToStart();
-        else sel.collapseToEnd();
-        return;
+      // session data of every tab (both keys) and of closed tabs that still carry a note
+      for (const tab of gBrowser.tabs) {
+        try {
+          SS.deleteCustomTabValue(tab, KEY);
+          SS.deleteCustomTabValue(tab, LEGACY_KEY);
+        } catch (e) {}
       }
-      sel.modify(e.shiftKey ? "extend" : "move", direction, granularity);
+      try {
+        const closed = SS.getClosedTabDataForWindow(window);
+        for (let i = closed.length - 1; i >= 0; i--) {
+          const ext = (closed[i] && closed[i].state && closed[i].state.extData) || {};
+          if (ext[KEY] || ext[LEGACY_KEY]) SS.forgetClosedTab(window, i);
+        }
+      } catch (e) {}
+
+      // files
+      for (const file of [STORE_FILE, STORE_FILE + ".tmp", LEGACY_STORE_FILE, LEGACY_STORE_FILE + ".tmp"]) {
+        try {
+          await IOUtils.remove(file, { ignoreAbsent: true });
+        } catch (e) {}
+      }
+
+      // settings of the old mod
+      try {
+        for (const name of Services.prefs.getChildList("mod.randomzentweaks.tab-notes.")) {
+          Services.prefs.clearUserPref(name);
+        }
+      } catch (e) {}
+
+      refreshAll();
+      toast("All notes data deleted");
     }
 
     // ---- start-up ----
@@ -1276,7 +1311,7 @@
       setInterval(alignAllFolderIndicators, 400);
     }
 
-    return { init, refreshAll, runBackupAction };
+    return { init, refreshAll, runBackupAction, runDeleteAction };
   })();
 
   // ---------------------------------------------------------------------
@@ -1291,6 +1326,11 @@
     Services.prefs.addObserver(ROOT + "backup", {
       observe() {
         TabNotes.runBackupAction();
+      },
+    });
+    Services.prefs.addObserver(ROOT + "delete", {
+      observe() {
+        TabNotes.runDeleteAction();
       },
     });
     TabNotes.init();

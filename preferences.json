@@ -120,6 +120,22 @@
     ]
   },
   {
+    "property": "mod.zolfmods.tab-notes.window-color",
+    "label": "Note window color",
+    "type": "dropdown",
+    "placeholder": "Zen accent",
+    "options": [
+      {
+        "label": "Dark",
+        "value": "dark"
+      },
+      {
+        "label": "Light",
+        "value": "light"
+      }
+    ]
+  },
+  {
     "property": "mod.zolfmods.tab-notes.backup",
     "label": "Notes backup",
     "type": "dropdown",
@@ -136,10 +152,22 @@
       {
         "label": "Import notes - replace all",
         "value": "import-replace"
-      },
+      }
+    ]
+  },
+  {
+    "property": "mod.zolfmods.tab-notes.delete",
+    "label": "Delete notes",
+    "type": "dropdown",
+    "placeholder": "Choose an action...",
+    "options": [
       {
         "label": "Clean up notes of closed tabs",
         "value": "cleanup"
+      },
+      {
+        "label": "Delete ALL notes data",
+        "value": "delete-all"
       }
     ]
   }
